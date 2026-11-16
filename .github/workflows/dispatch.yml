@@ -19,4 +19,5 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          SUBSCRIPTION_KEY: ${{ secrets.SUBSCRIPTION_KEY }}
           WEB_ORIGIN: https://everyday-mobile-preview.onrender.com
