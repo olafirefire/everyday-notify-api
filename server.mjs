@@ -7,10 +7,10 @@ const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUna
 const site=process.env.WEB_ORIGIN||'https://everyday-mobile-preview.onrender.com';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const tokenRe=/^[A-Za-z0-9_-]{40,160}$/;
-webpush.setVapidDetails(site,process.env.VAPID_PUBLIC_KEY,process.env.VAPID_PRIVATE_KEY);
+if(process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY)webpush.setVapidDetails(site,process.env.VAPID_PUBLIC_KEY,process.env.VAPID_PRIVATE_KEY);
 const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
 const subKey=Buffer.from(process.env.SUBSCRIPTION_KEY||'','base64url');
-if(subKey.length!==32)throw Error('SUBSCRIPTION_KEY required');
+if(subKey.length!==32)console.warn('Subscription encryption key is not configured');
 function seal(s){const iv=crypto.randomBytes(12);const cipher=crypto.createCipheriv('aes-256-gcm',subKey,iv);const data=Buffer.concat([cipher.update(JSON.stringify(s),'utf8'),cipher.final()]);return {iv:iv.toString('base64url'),tag:cipher.getAuthTag().toString('base64url'),data:data.toString('base64url')}}
 function unseal(s){const dec=crypto.createDecipheriv('aes-256-gcm',subKey,Buffer.from(s.iv,'base64url'));dec.setAuthTag(Buffer.from(s.tag,'base64url'));return JSON.parse(Buffer.concat([dec.update(Buffer.from(s.data,'base64url')),dec.final()]).toString('utf8'))}
 function send(res,status,data){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store','Access-Control-Allow-Origin':site,'Vary':'Origin','Access-Control-Allow-Headers':'content-type,x-device-id,x-device-token','Access-Control-Allow-Methods':'GET,POST,DELETE,OPTIONS'});res.end(status===204?'':JSON.stringify(data))}
@@ -20,9 +20,9 @@ async function device(req){const id=req.headers['x-device-id'],tok=req.headers['
 function parseDate(s){if(typeof s!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(s))return null;const t=Date.parse(s);return Number.isFinite(t)&&t>Date.now()-120000&&t<Date.now()+366*86400000?new Date(t).toISOString():null}
 async function route(req,res){
  if(req.method==='OPTIONS')return send(res,204,{});
- if(req.method==='GET'&&req.url==='/health')return send(res,200,{ok:true,mode:'pilot',alwaysOn:false});
- if(req.method==='GET'&&req.url==='/api/key')return send(res,200,{publicKey:process.env.VAPID_PUBLIC_KEY});
- if(req.headers.origin&&req.headers.origin!==site)return send(res,403,{error:'Origin rejected'});
+ if(req.method==='GET'&&req.url==='/health')return send(res,200,{ok:true,ready:Boolean(process.env.DATABASE_URL&&process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY&&subKey.length===32),mode:'pilot',alwaysOn:false});
+ if(req.method==='GET'&&req.url==='/api/key')return process.env.VAPID_PUBLIC_KEY?send(res,200,{publicKey:process.env.VAPID_PUBLIC_KEY}):send(res,503,{error:'Background push setup is pending'});
+ if(req.headers.origin&&req.headers.origin!==site)return send(res,403,{error:'Origin rejected'});if(!process.env.DATABASE_URL||subKey.length!==32)return send(res,503,{error:'Background push setup is pending'});
  if(req.method==='POST'&&req.url==='/api/device'){
   const b=await body(req);if(!uuid.test(b.id||'')||!tokenRe.test(b.token||'')||!subscriptionOK(b.subscription))return send(res,400,{error:'Invalid subscription'});
   const {rows}=await pool.query("INSERT INTO everyday_devices(device_id,token_hash,subscription) VALUES($1,$2,$3::jsonb) ON CONFLICT(device_id) DO UPDATE SET subscription=EXCLUDED.subscription,updated_at=now(),revoked_at=NULL WHERE everyday_devices.token_hash=EXCLUDED.token_hash RETURNING device_id",[b.id,sha(b.token),JSON.stringify(seal(b.subscription))]);
