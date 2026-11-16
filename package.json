@@ -1,0 +1,14 @@
+{
+  "name": "everyday-notifications-pilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dispatch": "node dispatch.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3",
+    "web-push": "^3.6.7"
+  }
+}
